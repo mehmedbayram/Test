@@ -1,13 +1,5 @@
 //
 //  CoreDataManager.swift
-//  CarPlayKids
-//
-//  Created by Developer on 22.05.2025.
-//
-
-
-//
-//  CoreDataManager.swift
 //  CarPlayMusic
 //
 //  Created by System on 22/05/25.
@@ -99,6 +91,28 @@ class CoreDataManager {
             print("Error deleting song: \(error)")
             return false
         }
+    }
+    
+    // MARK: - New Update Function
+    func updateSong(withId id: UUID, title: String, author: String, imageData: Data?) -> Bool {
+        let request: NSFetchRequest<SongEntity> = SongEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        
+        do {
+            let songs = try context.fetch(request)
+            if let song = songs.first {
+                song.title = title
+                song.author = author
+                song.imageData = imageData
+                
+                try context.save()
+                return true
+            }
+        } catch {
+            print("Error updating song: \(error)")
+        }
+        
+        return false
     }
     
     func updateSongOrder(_ songs: [SongEntity]) {

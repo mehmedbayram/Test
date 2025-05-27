@@ -25,28 +25,30 @@ class CarPlayMusic: ReloadDelegate {
     
     public func drawList() -> CPListTemplate {
         let songs = MusicPlayerEngine.shared.getSongList()
+        let currentSongIndex = MusicPlayerEngine.shared.getCurrentSongIndex()
         
         var items: [CPListItem] = []
         
         for (index, song) in songs.enumerated() {
+            let isCurrentSong = (index == currentSongIndex && MusicPlayerEngine.shared.isPlaying())
+            
             let item = CPListItem(
                 text: song.title,
                 detailText: song.author,
                 image: resizeImageForCarPlay(song.image),
-                accessoryImage: nil,
-                accessoryType: .disclosureIndicator
+                accessoryImage: isCurrentSong ? createPlayingIcon() : nil,
+                accessoryType: .none
             )
             
-            item.handler = { [weak self] _ , completion in
+            // Yeni davranış: Şarkıyı çal ve highlight yap, başka ekrana geçiş yapma
+            item.handler = { [weak self] _, completion in
                 MusicPlayerEngine.shared.reloadDelegate?.reloadTable(with: index)
                 MusicPlayerEngine.shared.play(id: index)
                 
-                guard self?.interfaceController?.topTemplate != CPNowPlayingTemplate.shared else {
-                    completion()
-                    return
-                }
+                // Highlight güncellemesi
+                self?.updateCarPlayList()
                 
-                self?.interfaceController?.pushTemplate(CPNowPlayingTemplate.shared, animated: true, completion: nil)
+                // Completion çağrısı
                 completion()
             }
             
@@ -72,6 +74,12 @@ class CarPlayMusic: ReloadDelegate {
         }
     }
     
+    // Çalan şarkı için simge oluştur
+    private func createPlayingIcon() -> UIImage? {
+        let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .medium)
+        return UIImage(systemName: "speaker.wave.2.fill", withConfiguration: config)?.withTintColor(.independence, renderingMode: .alwaysOriginal)
+    }
+    
     // MARK: - ReloadDelegate methods
     
     func reloadTable() {
@@ -94,34 +102,39 @@ class CarPlayMusic: ReloadDelegate {
         guard let currentTemplate = self.currentTemplate else { return }
         
         let songs = MusicPlayerEngine.shared.getSongList()
+        let currentSongIndex = MusicPlayerEngine.shared.getCurrentSongIndex()
         var items: [CPListItem] = []
         
         for (index, song) in songs.enumerated() {
+            let isCurrentSong = (index == currentSongIndex)
+            let isPlaying = MusicPlayerEngine.shared.isPlaying()
+            
+            let shouldHighlight = isCurrentSong && isPlaying
+            
             let item = CPListItem(
                 text: song.title,
                 detailText: song.author,
                 image: resizeImageForCarPlay(song.image),
-                accessoryImage: nil,
-                accessoryType: .disclosureIndicator
+                accessoryImage: shouldHighlight ? createPlayingIcon() : nil,
+                accessoryType: .none
             )
             
-            item.handler = { [weak self] _ , completion in
+            item.handler = { [weak self] _, completion in
                 MusicPlayerEngine.shared.reloadDelegate?.reloadTable(with: index)
                 MusicPlayerEngine.shared.play(id: index)
                 
-                guard self?.interfaceController?.topTemplate != CPNowPlayingTemplate.shared else {
-                    completion()
-                    return
+                // Highlight güncellemesi
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self?.updateCarPlayList()
                 }
                 
-                self?.interfaceController?.pushTemplate(CPNowPlayingTemplate.shared, animated: true, completion: nil)
                 completion()
             }
             
             items.append(item)
         }
         
-        let section = CPListSection(items: items, header: "Music (\(songs.count) songs)", sectionIndexTitle: nil)
+        let section = CPListSection(items: items, header: "Eren'in Sevdiği Müzikler (\(songs.count) songs)", sectionIndexTitle: nil)
         currentTemplate.updateSections([section])
     }
 }
