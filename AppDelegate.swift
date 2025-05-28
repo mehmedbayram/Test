@@ -35,6 +35,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Initialize Core Data
         _ = CoreDataManager.shared.persistentContainer
         
+        // GÜNCELLENMIŞ: Akıllı dosya senkronizasyonu
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            MusicPlayerEngine.shared.smartSyncFilesOnStartup()
+            
+            #if DEBUG
+            // Debug modunda sıralama kontrolü
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                MusicPlayerEngine.shared.validateSortOrder()
+                MusicPlayerEngine.shared.printSortOrder()
+            }
+            #endif
+        }
+        
         return true
     }
 
@@ -55,6 +68,20 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func applicationWillTerminate(_ application: UIApplication) {
         // Called when the application is about to terminate. Save data if appropriate.
         CoreDataManager.shared.saveContext()
+    }
+    
+    // AppDelegate.swift'e eklenecek metodlar
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        // Uygulama aktif olduğunda senkronizasyon
+        MusicPlayerEngine.shared.syncFilesOnStartup()
+    }
+
+    func applicationWillEnterForeground(_ application: UIApplication) {
+        // Foreground'a geldiğinde kontrol
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            MusicPlayerEngine.shared.syncFilesOnStartup()
+        }
     }
 
 }

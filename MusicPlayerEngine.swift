@@ -422,3 +422,157 @@ extension Notification.Name {
     static let didUpdatePlayingSong = Notification.Name("didUpdatePlayingSong")
 }
 //CarPlayMainScene'e bu bildirimi dinlemek için bir observer ekleyelim: <--
+
+
+// MusicPlayerEngine.swift dosyasına eklenecek fonksiyonlar
+
+extension MusicPlayerEngine {
+    
+    // MARK: - File Synchronization Functions
+    
+    /// Akıllı dosya senkronizasyonu (rename detection ile)
+    public func smartSyncFilesOnStartup() {
+        print("Starting smart file synchronization...")
+        
+        // Dosya değişikliklerini tespit et
+        let changes = FileManagerHelper.shared.detectFileChanges()
+        
+        var operationCount = 0
+        
+        // 1. Rename işlemlerini handle et
+        for rename in changes.renamed {
+            let success = CoreDataManager.shared.handleFileRename(
+                oldFileName: rename.old,
+                newFileName: rename.new,
+                keepSortOrder: true
+            )
+            
+            if success {
+                print("Handled file rename: \(rename.old) -> \(rename.new)")
+                operationCount += 1
+            }
+        }
+        
+        // 2. Silinen dosyaları temizle
+        for deletedFile in changes.deleted {
+            if let song = CoreDataManager.shared.fetchAllSongs().first(where: { $0.fileName == deletedFile }) {
+                let success = CoreDataManager.shared.deleteSong(song)
+                if success {
+                    print("Removed deleted file from Core Data: \(deletedFile)")
+                    operationCount += 1
+                }
+            }
+        }
+        
+        // 3. Yeni dosyaları ekle
+        for newFileURL in changes.added {
+            let success = CoreDataManager.shared.addSongFromExistingFile(newFileURL)
+            if success {
+                print("Added new file: \(newFileURL.lastPathComponent)")
+                operationCount += 1
+            }
+        }
+        
+        // 4. Sıralama düzenini kontrol et ve düzelt
+        if operationCount > 0 {
+            CoreDataManager.shared.reorderSongs()
+            
+            // Song listesini yeniden yükle
+            loadSongsFromCoreData()
+            
+            // UI'ı güncelle
+            DispatchQueue.main.async {
+                self.reloadDelegate?.songsDidUpdate()
+            }
+            
+            print("Smart sync completed: \(operationCount) operations")
+        } else {
+            print("No changes detected")
+        }
+    }
+    
+    /// Eski syncFilesOnStartup metodunu güncelle
+    public func syncFilesOnStartup() {
+        smartSyncFilesOnStartup()
+    }
+       
+       /// Detaylı senkronizasyon raporu döndürür
+       public func getSyncReport() -> (missing: [String], orphaned: [String], total: Int) {
+           let comparison = FileManagerHelper.shared.compareFilesWithCoreData()
+           let totalSongs = CoreDataManager.shared.fetchAllSongs().count
+           
+           return (missing: comparison.missing, orphaned: comparison.orphaned, total: totalSongs)
+       }
+       
+       /// Manuel temizlik işlemi
+       public func cleanupMissingFiles() -> Int {
+           let deletedCount = CoreDataManager.shared.cleanupOrphanedSongs()
+           
+           if deletedCount > 0 {
+               loadSongsFromCoreData()
+               DispatchQueue.main.async {
+                   self.reloadDelegate?.songsDidUpdate()
+               }
+           }
+           
+           return deletedCount
+       }
+    
+    /// Title güncellendiğinde dosya senkronizasyonu ile günceller
+    public func updateSongWithFileSync(at index: Int, title: String, author: String, imageData: Data?) -> Bool {
+        guard index < songList.count else { return false }
+        
+        let songId = songList[index].id
+        let success = CoreDataManager.shared.updateSongWithFileSync(withId: songId, title: title, author: author, imageData: imageData)
+        
+        if success {
+            loadSongsFromCoreData()
+            
+            // If currently playing song is updated, update the now playing info
+            if currentSongIndex == index {
+                updateNowPlayingInfo()
+            }
+            
+            // UI'ı güncelle
+            DispatchQueue.main.async {
+                self.reloadDelegate?.songsDidUpdate()
+            }
+        }
+        
+        return success
+    }
+    
+    /// Manual senkronizasyon tetikleyici
+    public func forceSyncFiles() {
+        syncFilesOnStartup()
+    }
+    
+    
+    /// Sıralama düzenini konsola yazdırır
+    public func printSortOrder() {
+        let songs = CoreDataManager.shared.fetchAllSongs()
+        
+        print("=== CURRENT SORT ORDER ===")
+        for (index, song) in songs.enumerated() {
+            print("\(index): \(song.title ?? "Unknown") - sortOrder: \(song.sortOrder) - fileName: \(song.fileName ?? "Unknown")")
+        }
+        print("==========================")
+    }
+    
+    /// Sıralama tutarlılığını kontrol eder
+    public func validateSortOrder() -> Bool {
+        let songs = CoreDataManager.shared.fetchAllSongs()
+        
+        for (index, song) in songs.enumerated() {
+            if song.sortOrder != Int32(index) {
+                print("Sort order inconsistency detected at index \(index): expected \(index), got \(song.sortOrder)")
+                return false
+            }
+        }
+        
+        print("Sort order is consistent")
+        return true
+    }
+    
+    
+}

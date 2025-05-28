@@ -170,6 +170,7 @@ class EditSongViewController: UIViewController {
         }
     }
     
+    // EditSongViewController.swift'teki saveTapped metodunu güncelleyin
     @IBAction func saveTapped(_ sender: AnyObject) {
         guard let title = titleTextField.text, !title.isEmpty,
               let author = authorTextField.text, !author.isEmpty,
@@ -179,9 +180,9 @@ class EditSongViewController: UIViewController {
             return
         }
         
-        // Update CoreData
-        let success = CoreDataManager.shared.updateSong(
-            withId: song.id,
+        // GÜNCELLEME: File sync ile update et
+        let success = MusicPlayerEngine.shared.updateSongWithFileSync(
+            at: songIndex,
             title: title,
             author: author,
             imageData: image.jpegData(compressionQuality: 0.8)

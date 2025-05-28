@@ -35,6 +35,9 @@ class MusicTableView: UITableView, UITableViewDelegate, UITableViewDataSource, R
         
         generator.impactOccurred(intensity: 1.0)
         
+        // Tam file sync işlemini tetikle (ekleme + silme)
+        MusicPlayerEngine.shared.syncFilesOnStartup()
+        
         // Veriyi çekmiş olsa bile 1 saniye sonra refresh animasyonu bitsin
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             

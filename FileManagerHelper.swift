@@ -131,3 +131,250 @@ class FileManagerHelper {
         return isAudioFile(url) || isVideoFile(url)
     }
 }
+
+
+// FileManagerHelper.swift dosyasına eklenecek fonksiyonlar
+
+extension FileManagerHelper {
+    
+    // MARK: - File Scanning and Synchronization
+    
+    /// Documents directory'deki tüm medya dosyalarını tarar
+    func scanDocumentsDirectoryForNewFiles() -> [URL] {
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        var newFiles: [URL] = []
+        
+        do {
+            let fileURLs = try FileManager.default.contentsOfDirectory(
+                at: documentsDirectory,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
+            )
+            
+            for fileURL in fileURLs {
+                if isMediaFile(fileURL) {
+                    // Core Data'da bu dosya var mı kontrol et
+                    let fileName = fileURL.lastPathComponent
+                    if !CoreDataManager.shared.songExists(fileName: fileName) {
+                        newFiles.append(fileURL)
+                    }
+                }
+            }
+        } catch {
+            print("Error scanning documents directory: \(error)")
+        }
+        
+        return newFiles
+    }
+    
+    /// Dosya ismini güvenli hale getirir (title'dan dosya ismi oluşturmak için)
+    func sanitizeFileName(_ title: String, withExtension ext: String) -> String {
+        // Türkçe karakterleri ve özel karakterleri temizle
+        let invalidCharacters = CharacterSet(charactersIn: "\\/:*?\"<>|")
+        let sanitized = title
+            .components(separatedBy: invalidCharacters)
+            .joined(separator: "_")
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Boş string kontrolü
+        let finalName = sanitized.isEmpty ? "Unknown_Song" : sanitized
+        return "\(finalName).\(ext)"
+    }
+    
+    /// Dosya ismini değiştirir
+    func renameFile(from oldFileName: String, to newFileName: String) -> Bool {
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let oldURL = documentsDirectory.appendingPathComponent(oldFileName)
+        let newURL = documentsDirectory.appendingPathComponent(newFileName)
+        
+        // Dosya var mı kontrol et
+        guard FileManager.default.fileExists(atPath: oldURL.path) else {
+            print("Source file does not exist: \(oldFileName)")
+            return false
+        }
+        
+        // Hedef dosya zaten var mı kontrol et
+        if FileManager.default.fileExists(atPath: newURL.path) {
+            print("Target file already exists: \(newFileName)")
+            return false
+        }
+        
+        do {
+            try FileManager.default.moveItem(at: oldURL, to: newURL)
+            print("File renamed from \(oldFileName) to \(newFileName)")
+            return true
+        } catch {
+            print("Error renaming file: \(error)")
+            return false
+        }
+    }
+    
+    /// Mevcut dosyanın uzantısını alır
+    func getFileExtension(fileName: String) -> String {
+        return URL(fileURLWithPath: fileName).pathExtension
+    }
+    
+    // MARK: - File Validation and Cleanup
+        
+        /// Documents directory'deki tüm dosyaları listeler
+        func getAllFilesInDocuments() -> [String] {
+            let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            var allFiles: [String] = []
+            
+            do {
+                let fileURLs = try FileManager.default.contentsOfDirectory(
+                    at: documentsDirectory,
+                    includingPropertiesForKeys: [.isRegularFileKey],
+                    options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
+                )
+                
+                for fileURL in fileURLs {
+                    if isMediaFile(fileURL) {
+                        allFiles.append(fileURL.lastPathComponent)
+                    }
+                }
+            } catch {
+                print("Error getting files in documents: \(error)")
+            }
+            
+            return allFiles
+        }
+        
+        /// Core Data'daki dosyalar ile fiziksel dosyaları karşılaştırır
+        func compareFilesWithCoreData() -> (missing: [String], orphaned: [String]) {
+            let physicalFiles = Set(getAllFilesInDocuments())
+            let coreDataSongs = CoreDataManager.shared.fetchAllSongs()
+            let coreDataFiles = Set(coreDataSongs.compactMap { $0.fileName })
+            
+            let missingFiles = Array(coreDataFiles.subtracting(physicalFiles)) // Core Data'da var ama fiziksel dosya yok
+            let orphanedFiles = Array(physicalFiles.subtracting(coreDataFiles)) // Fiziksel dosya var ama Core Data'da yok
+            
+            return (missing: missingFiles, orphaned: orphanedFiles)
+        }
+        
+    /*
+        /// Dosya boyutunu alır (opsiyonel bilgi için)
+        func getFileSize(fileName: String) -> Int64? {
+            let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let fileURL = documentsDirectory.appendingPathComponent(fileName)
+            
+            do {
+                let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+                return attributes[.size] as? Int64
+            } catch {
+                return nil
+            }
+        }
+     */
+    
+    // MARK: - File Rename Detection
+    
+    /// Dosya ismi değişikliklerini tespit eder
+    func detectFileChanges() -> (renamed: [(old: String, new: String, metadata: (title: String, artist: String, artwork: UIImage?))], deleted: [String], added: [URL]) {
+        let currentFiles = getAllFilesInDocuments()
+        let coreDataSongs = CoreDataManager.shared.fetchAllSongs()
+        let coreDataFiles = Set(coreDataSongs.compactMap { $0.fileName })
+        
+        var renamedFiles: [(old: String, new: String, metadata: (title: String, artist: String, artwork: UIImage?))] = []
+        var deletedFiles: [String] = []
+        var addedFiles: [URL] = []
+        
+        let currentFilesSet = Set(currentFiles)
+        
+        // Silinen dosyaları bul
+        deletedFiles = Array(coreDataFiles.subtracting(currentFilesSet))
+        
+        // Yeni eklenen dosyaları bul
+        for fileName in currentFiles {
+            if !coreDataFiles.contains(fileName) {
+                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let fileURL = documentsPath.appendingPathComponent(fileName)
+                addedFiles.append(fileURL)
+            }
+        }
+        
+        // Rename işlemlerini tespit et (metadata karşılaştırması ile)
+        if deletedFiles.count == 1 && addedFiles.count == 1 {
+            let deletedFile = deletedFiles[0]
+            let addedFile = addedFiles[0]
+            
+            // Silinen dosyanın Core Data'daki metadata'sını al
+            if let deletedSong = coreDataSongs.first(where: { $0.fileName == deletedFile }) {
+                // Yeni dosyanın metadata'sını çıkar
+                let newMetadata = extractMetadata(from: addedFile)
+                
+                // Metadata benzerliğini kontrol et (dosya boyutu, süre vs.)
+                if areFilesSimilar(deletedSong: deletedSong, newFileURL: addedFile) {
+                    renamedFiles.append((
+                        old: deletedFile,
+                        new: addedFile.lastPathComponent,
+                        metadata: newMetadata
+                    ))
+                    
+                    // Renamed olarak tespit edildiyse deleted ve added listelerinden çıkar
+                    deletedFiles.removeAll()
+                    addedFiles.removeAll()
+                }
+            }
+        }
+        
+        return (renamed: renamedFiles, deleted: deletedFiles, added: addedFiles)
+    }
+    
+    /// İki dosyanın aynı dosya olup olmadığını kontrol eder
+    private func areFilesSimilar(deletedSong: SongEntity, newFileURL: URL) -> Bool {
+        // Dosya uzantısı aynı mı?
+        let deletedExtension = URL(fileURLWithPath: deletedSong.fileName ?? "").pathExtension
+        let newExtension = newFileURL.pathExtension
+        
+        if deletedExtension != newExtension {
+            return false
+        }
+        
+        // Dosya boyutu karşılaştırması
+        if let deletedSize = getFileSize(fileName: deletedSong.fileName ?? ""),
+           let newSize = getFileSize(fileName: newFileURL.lastPathComponent) {
+            
+            // Boyut farkı %5'ten fazla ise farklı dosyalar
+            let sizeDifference = abs(deletedSize - newSize)
+            let averageSize = (deletedSize + newSize) / 2
+            let differencePercentage = Double(sizeDifference) / Double(averageSize) * 100
+            
+            if differencePercentage > 5.0 {
+                return false
+            }
+        }
+        
+        // Dosya oluşturulma tarihi kontrolü (yakın zamanda mı oluşturuldu?)
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let newFileURL_full = documentsPath.appendingPathComponent(newFileURL.lastPathComponent)
+        
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: newFileURL_full.path)
+            if let creationDate = attributes[.creationDate] as? Date {
+                let timeDifference = abs(creationDate.timeIntervalSinceNow)
+                // Son 30 saniye içinde oluşturulmuş mu?
+                return timeDifference < 30
+            }
+        } catch {
+            print("Error getting file attributes: \(error)")
+        }
+        
+        return true
+    }
+    
+    /// Dosya boyutunu güvenli şekilde alır
+    private func getFileSize(fileName: String) -> Int64? {
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let fileURL = documentsDirectory.appendingPathComponent(fileName)
+        
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            return attributes[.size] as? Int64
+        } catch {
+            return nil
+        }
+    }
+    
+}
