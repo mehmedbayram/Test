@@ -134,7 +134,7 @@ class CarPlayMusic: ReloadDelegate {
             items.append(item)
         }
         
-        let section = CPListSection(items: items, header: "Eren'in Sevdiği Müzikler (\(songs.count) songs)", sectionIndexTitle: nil)
+        let section = CPListSection(items: items, header: "\(PlaylistTitleManager.shared.getTitle()) (\(songs.count) songs)", sectionIndexTitle: nil)
         currentTemplate.updateSections([section])
     }
 }

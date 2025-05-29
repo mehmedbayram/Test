@@ -189,11 +189,14 @@ extension CoreDataManager {
                 let fileExtension = FileManagerHelper.shared.getFileExtension(fileName: oldFileName)
                 let newFileName = FileManagerHelper.shared.sanitizeFileName(title, withExtension: fileExtension)
                 
-                // Dosya ismini değiştir
+                // Dosya ismini değiştir ve sıralamayı koru
+                let oldSortOrder = song.sortOrder // Önemli: Mevcut sıralamayı sakla
+                
                 if oldFileName != newFileName {
                     let renameSuccess = FileManagerHelper.shared.renameFile(from: oldFileName, to: newFileName)
                     if renameSuccess {
                         song.fileName = newFileName
+                        song.sortOrder = oldSortOrder // Sıralamayı koru
                     }
                 }
                 
@@ -306,35 +309,31 @@ extension CoreDataManager {
     
     // MARK: - File Rename Handling
         
-        /// Dosya ismini sıralama koruyarak günceller
-        func handleFileRename(oldFileName: String, newFileName: String, keepSortOrder: Bool = true) -> Bool {
-            let request: NSFetchRequest<SongEntity> = SongEntity.fetchRequest()
-            request.predicate = NSPredicate(format: "fileName == %@", oldFileName)
-            
-            do {
-                let songs = try context.fetch(request)
-                if let song = songs.first {
-                    let oldSortOrder = song.sortOrder
-                    
-                    song.fileName = newFileName
-                    
-                    // Sıralama koruma seçeneği
-                    if keepSortOrder {
-                        song.sortOrder = oldSortOrder
-                    } else {
-                        song.sortOrder = Int32(getNextSortOrder())
-                    }
-                    
-                    try context.save()
-                    print("File renamed in Core Data: \(oldFileName) -> \(newFileName), sort order: \(song.sortOrder)")
-                    return true
-                }
-            } catch {
-                print("Error handling file rename: \(error)")
+    // Satır 310-337: handleFileRename fonksiyonu
+    func handleFileRename(oldFileName: String, newFileName: String, keepSortOrder: Bool = true) -> Bool {
+        let request: NSFetchRequest<SongEntity> = SongEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "fileName == %@", oldFileName)
+        
+        do {
+            let songs = try context.fetch(request)
+            if let song = songs.first {
+                let oldSortOrder = song.sortOrder
+                
+                song.fileName = newFileName
+                
+                // ÖNEMLİ: Her zaman önceki sıralamayı koru
+                song.sortOrder = oldSortOrder  // keepSortOrder parametresini kaldırarak her zaman sıralamayı koru
+                
+                try context.save()
+                print("File renamed in Core Data: \(oldFileName) -> \(newFileName), sort order: \(song.sortOrder)")
+                return true
             }
-            
-            return false
+        } catch {
+            print("Error handling file rename: \(error)")
         }
+        
+        return false
+    }
         
         /// Sıralama düzenini yeniden düzenler (boşlukları kapatır)
         func reorderSongs() {

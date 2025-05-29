@@ -67,8 +67,14 @@ class MusicPlayerEngine {
         return currentSongIndex
     }
     
-    // MARK: - Initialization
+    // MARK: - UI Sync Methods
+
+    /// UI senkronizasyonu için şarkının çalıp çalmadığını ve hangi sırada olduğunu döndürür
+    public func getCurrentPlaybackState() -> (isPlaying: Bool, songIndex: Int) {
+        return (isPlaying: isPlaying(), songIndex: currentSongIndex)
+    }
     
+    // MARK: - Initialization
     private init() {
         // init made private to avoid external initialization
         self.setupRemoteTransportControls()
@@ -89,6 +95,7 @@ class MusicPlayerEngine {
             name: AVAudioSession.interruptionNotification,
             object: nil
         )
+        
     }
     
     // MARK: - Public functions
@@ -256,12 +263,25 @@ class MusicPlayerEngine {
         self.player.play()
         self.updatePlaybackRateData()
         self.activateControlCenterCommands()
+        
+        // Durumu bildir
+        NotificationCenter.default.post(
+            name: .playerStateDidChange,
+            object: nil,
+            userInfo: ["isPlaying": true]
+        )
     }
     
     /// Pause the current song.
     public func stop() -> Void {
         self.player.pause()
         self.updatePlaybackRateData()
+        // Durumu bildir
+        NotificationCenter.default.post(
+            name: .playerStateDidChange,
+            object: nil,
+            userInfo: ["isPlaying": false]
+        )
     }
     
     public func getSongList() -> [SongItem] {
@@ -275,6 +295,12 @@ class MusicPlayerEngine {
     public func resumePlaying() -> Void {
         self.player.play()
         self.updatePlaybackRateData()
+        // Durumu bildir
+        NotificationCenter.default.post(
+            name: .playerStateDidChange,
+            object: nil,
+            userInfo: ["isPlaying": false]
+        )
     }
     
     // MARK: - Control Center Commands
@@ -365,6 +391,14 @@ class MusicPlayerEngine {
         }
         
         MPNowPlayingInfoCenter.default().nowPlayingInfo = self.audioInfoControlCenter
+        
+        // Durumu bildirir
+        NotificationCenter.default.post(
+            name: .playerStateDidChange,
+            object: nil,
+            userInfo: ["isPlaying": self.player.rate != 0]
+        )
+        
     }
     
     // MARK: - Interruption Handling
@@ -412,6 +446,24 @@ class MusicPlayerEngine {
             stopSong()
         }
     }
+    
+    // MusicPlayerEngine.swift dosyasına ekleyin
+    // MARK: - Navigation Handling
+    private var playbackStateBeforeNavigation: Bool = false
+
+    public func preservePlaybackState() {
+        playbackStateBeforeNavigation = isPlaying()
+        print("Preserving playback state: \(playbackStateBeforeNavigation ? "playing" : "paused")")
+    }
+
+    public func restorePlaybackState() {
+        if playbackStateBeforeNavigation && !isPlaying() {
+            print("Restoring playback state to playing")
+            resumePlaying()
+        }
+        print("Playback state restored")
+    }
+    
 }
 
 
@@ -420,6 +472,7 @@ class MusicPlayerEngine {
 // MARK: - Notification Names
 extension Notification.Name {
     static let didUpdatePlayingSong = Notification.Name("didUpdatePlayingSong")
+    static let playerStateDidChange = Notification.Name("playerStateDidChange") // Bu satırı ekleyin
 }
 //CarPlayMainScene'e bu bildirimi dinlemek için bir observer ekleyelim: <--
 
@@ -430,21 +483,20 @@ extension MusicPlayerEngine {
     
     // MARK: - File Synchronization Functions
     
-    /// Akıllı dosya senkronizasyonu (rename detection ile)
+    /// Akıllı dosya senkronizasyonu (düzeltilmiş versiyon)
     public func smartSyncFilesOnStartup() {
         print("Starting smart file synchronization...")
         
-        // Dosya değişikliklerini tespit et
         let changes = FileManagerHelper.shared.detectFileChanges()
-        
         var operationCount = 0
+        var hasRenameOperations = false
         
-        // 1. Rename işlemlerini handle et
+        // 1.Rename işlemlerini handle et
         for rename in changes.renamed {
             let success = CoreDataManager.shared.handleFileRename(
                 oldFileName: rename.old,
                 newFileName: rename.new,
-                keepSortOrder: true
+                keepSortOrder: true  // Bu parametre true olarak kalsın
             )
             
             if success {
@@ -473,9 +525,17 @@ extension MusicPlayerEngine {
             }
         }
         
-        // 4. Sıralama düzenini kontrol et ve düzelt
+        // 4. SADECE RENAME OLMAYAN İŞLEMLERDE REORDER YAP
         if operationCount > 0 {
-            CoreDataManager.shared.reorderSongs()
+            // Sadece dosya eklenme/silinme varsa reorder yap
+            let needsReordering = changes.deleted.count > 0 || changes.added.count > 0
+            
+            if needsReordering && !hasRenameOperations {
+                CoreDataManager.shared.reorderSongs()
+                print("Reordered songs after add/delete operations")
+            } else if hasRenameOperations && !needsReordering {
+                print("Skipped reordering - only rename operations detected")
+            }
             
             // Song listesini yeniden yükle
             loadSongsFromCoreData()

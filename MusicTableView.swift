@@ -108,10 +108,31 @@ class MusicTableView: UITableView, UITableViewDelegate, UITableViewDataSource, R
         print("Manual refresh completed")
     }
     
+    // MARK: - Playback State Observer
+
+    @objc private func playbackStateChanged(_ notification: Notification) {
+        if let isPlaying = notification.userInfo?["isPlaying"] as? Bool {
+            // Eğer çalmıyorsa, rowInPlay'i sıfırla
+            if !isPlaying {
+                self.rowInPlay = -1
+            } else {
+                // Eğer çalıyorsa, rowInPlay'i currentSongIndex değerine ayarla
+                self.rowInPlay = MusicPlayerEngine.shared.getCurrentSongIndex()
+            }
+            
+            // UI'ı güncelle
+            DispatchQueue.main.async {
+                self.reloadData()
+            }
+        }
+    }
+    
     // MARK: - Init
 
     required init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
+        
+
  
         let nibCell = UINib(nibName: cellID, bundle: nil)
         self.register(nibCell, forCellReuseIdentifier: cellID)
@@ -142,6 +163,14 @@ class MusicTableView: UITableView, UITableViewDelegate, UITableViewDataSource, R
 
         self.refreshControl = refreshControl
         // Pull to refresh 1/2 <--
+        
+        // Playback durum değişikliklerini dinle
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(playbackStateChanged),
+            name: .playerStateDidChange,
+            object: nil
+        )
         
     }
     
@@ -355,11 +384,11 @@ class MusicTableView: UITableView, UITableViewDelegate, UITableViewDataSource, R
         if selectedRow == sender.tag {
             if MusicPlayerEngine.shared.isPlaying() {
                 MusicPlayerEngine.shared.stop()
-                self.rowInPlay = -1
+                self.rowInPlay = -1  // Durduğunda -1 yap
                 self.lastInPlay = sender.tag
             } else {
                 MusicPlayerEngine.shared.resumePlaying()
-                self.rowInPlay = sender.tag
+                self.rowInPlay = sender.tag  // Devam ettiğinde tekrar ayarla
                 self.lastInPlay = sender.tag
             }
         } else {
@@ -369,7 +398,16 @@ class MusicTableView: UITableView, UITableViewDelegate, UITableViewDataSource, R
             self.lastInPlay = sender.tag
         }
         
-        self.reloadData()
+        // Refresh için kısa bir gecikme ver
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // Burada durumu tekrar kontrol et ve garanti altına al
+            if MusicPlayerEngine.shared.isPlaying() {
+                self.rowInPlay = MusicPlayerEngine.shared.getCurrentSongIndex()
+            } else {
+                self.rowInPlay = -1
+            }
+            self.reloadData()
+        }
     }
     
     // MARK: - EditSongDelegate
@@ -401,9 +439,19 @@ class MusicTableView: UITableView, UITableViewDelegate, UITableViewDataSource, R
     // MARK: - Reload Delegate protocol
     
     func reloadTable() {
-        MusicPlayerEngine.shared.stop()
-        self.rowInPlay = -1
-        self.selectedRow = -1
+        // Mevcut çalma durumunu sakla
+        let wasPlaying = MusicPlayerEngine.shared.isPlaying()
+        let currentIndex = MusicPlayerEngine.shared.getCurrentSongIndex()
+        
+        if !wasPlaying {
+            // Müzik çalmıyorsa normal davran
+            self.rowInPlay = -1
+            self.selectedRow = -1
+        } else {
+            // Müzik çalıyorsa durumu koru
+            self.rowInPlay = currentIndex
+            self.selectedRow = currentIndex
+        }
         
         DispatchQueue.main.async {
             self.reloadData()

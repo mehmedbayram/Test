@@ -36,13 +36,19 @@ class EditSongViewController: UIViewController {
         generator.prepare()
         generator.impactOccurred(intensity: 1.0)
         
-        saveTapped("" as AnyObject)
+        // Sadece saveTapped metodu çağrılmadıysa (kullanıcı geri butonuna bastıysa) save işlemi yap
+        if isMovingFromParent && !isSaveTappedCalled {
+            saveTapped("" as AnyObject)
+        }
         
-        // Delegate'e haber ver ki doSomething çalışsın
+        // Delegate'e haber ver
         delegate?.editViewControllerWillDisappear()
         
         print("EditSongViewController disappeared - delegate called")
     }
+
+    // İlave bir değişken ekleyelim
+    private var isSaveTappedCalled = false
     
     //İstenen view'e Dokunulduğunda yapılacaklar
     @objc func tapped(sender: UITapGestureRecognizer){
@@ -172,6 +178,9 @@ class EditSongViewController: UIViewController {
     
     // EditSongViewController.swift'teki saveTapped metodunu güncelleyin
     @IBAction func saveTapped(_ sender: AnyObject) {
+        
+        isSaveTappedCalled = true
+        
         guard let title = titleTextField.text, !title.isEmpty,
               let author = authorTextField.text, !author.isEmpty,
               let image = imageView.image,
@@ -180,8 +189,12 @@ class EditSongViewController: UIViewController {
             return
         }
         
+        // Müzik çalma durumunu koru
+        let musicPlayer = MusicPlayerEngine.shared
+        musicPlayer.preservePlaybackState()
+        
         // GÜNCELLEME: File sync ile update et
-        let success = MusicPlayerEngine.shared.updateSongWithFileSync(
+        let success = musicPlayer.updateSongWithFileSync(
             at: songIndex,
             title: title,
             author: author,
